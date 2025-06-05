@@ -22,6 +22,12 @@ query = "SELECT * FROM CSV_FASTSHIP_ORDERS"
 df = pd.read_sql(query, conn)
 
 conn.close()
+
+# Assicuriamoci che le colonne data siano in formato datetime
+for col in df.columns:
+    if "date" in col.lower():
+        df[col] = pd.to_datetime(df[col], errors="coerce")
+
 st.subheader("Display the first rows")
 st.write(df.head())
 
@@ -32,30 +38,61 @@ num_filters = st.sidebar.number_input(
 )
 
 selected_filters = []
-selected_values = []
 
 if num_filters > 0:
     for i in range(num_filters):
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.sidebar.columns([3, 2, 3])
         with col1:
             filter_column = st.selectbox(
-                "Select the column to filter by",
+                f"Filter {i+1}: Select column",
                 df.columns.to_list(),
                 key=f"f{i}_column",
             )
-            unique_values = df[filter_column].dropna().unique()
         with col2:
-            filter_value = st.selectbox(
-                "Select the value to filter by",
-                unique_values,
-                key=f"f{i}_value",
+            operator = st.selectbox(
+                f"Filter {i+1}: Operator",
+                ["==", ">", ">=", "<", "<="],
+                key=f"f{i}_operator",
             )
-        selected_filters.append(filter_column)
-        selected_values.append(filter_value)
+        with col3:
+            if pd.api.types.is_numeric_dtype(df[filter_column]):
+                filter_value = st.number_input(
+                    f"Filter {i+1}: Value",
+                    value=float(df[filter_column].min()),
+                    key=f"f{i}_value",
+                )
+            elif pd.api.types.is_datetime64_any_dtype(df[filter_column]):
+                min_date = df[filter_column].min()
+                max_date = df[filter_column].max()
+                filter_value = st.date_input(
+                    f"Filter {i+1}: Date",
+                    value=min_date.date() if pd.notnull(min_date) else None,
+                    min_value=min_date.date() if pd.notnull(min_date) else None,
+                    max_value=max_date.date() if pd.notnull(max_date) else None,
+                    key=f"f{i}_value",
+                )
+                filter_value = pd.to_datetime(filter_value)
+            else:
+                unique_values = df[filter_column].dropna().unique()
+                filter_value = st.selectbox(
+                    f"Filter {i+1}: Value",
+                    unique_values,
+                    key=f"f{i}_value",
+                )
+        selected_filters.append((filter_column, operator, filter_value))
 
     df_filtered = df.copy()
-    for col, val in zip(selected_filters, selected_values):
-        df_filtered = df_filtered[df_filtered[col] == val]
+    for col, op, val in selected_filters:
+        if op == "==":
+            df_filtered = df_filtered[df_filtered[col] == val]
+        elif op == ">":
+            df_filtered = df_filtered[df_filtered[col] > val]
+        elif op == ">=":
+            df_filtered = df_filtered[df_filtered[col] >= val]
+        elif op == "<":
+            df_filtered = df_filtered[df_filtered[col] < val]
+        elif op == "<=":
+            df_filtered = df_filtered[df_filtered[col] <= val]
 
     st.subheader("Filtered Data:")
     st.write(df_filtered)
@@ -73,14 +110,14 @@ if num_filters > 0:
         st.subheader("Correlation Chart Between 2 Categories")
         if len(selected_filters) >= 2:
             pivot = pd.crosstab(
-                df_filtered[selected_filters[0]], df_filtered[selected_filters[1]]
+                df_filtered[selected_filters[0][0]], df_filtered[selected_filters[1][0]]
             )
             fig, ax = plt.subplots(figsize=(10, 6))
             sns.heatmap(pivot, annot=True, fmt="d", cmap="Blues", cbar=True, ax=ax)
-            ax.set_xlabel(selected_filters[0])
-            ax.set_ylabel(selected_filters[1])
+            ax.set_xlabel(selected_filters[0][0])
+            ax.set_ylabel(selected_filters[1][0])
             ax.set_title(
-                f"Correlation between {selected_filters[0]} and {selected_filters[1]}"
+                f"Correlation between {selected_filters[0][0]} and {selected_filters[1][0]}"
             )
             st.pyplot(fig)
         else:
