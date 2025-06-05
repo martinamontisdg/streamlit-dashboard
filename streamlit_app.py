@@ -1,151 +1,115 @@
+# Import python packages
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import seaborn as sns
+import matplotlib.pyplot as plt
+import snowflake.connector
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+st.set_page_config(layout="wide")
+st.title("Test Dashboard to Learn")
+
+# Connessione a Snowflake
+conn = snowflake.connector.connect(
+    user=st.secrets["SNOWFLAKE_USER"],
+    password=st.secrets["SNOWFLAKE_PASSWORD"],
+    account=st.secrets["SNOWFLAKE_ACCOUNT"],
+    warehouse=st.secrets["SNOWFLAKE_WAREHOUSE"],
+    database=st.secrets["SNOWFLAKE_DATABASE"],
+    schema=st.secrets["SNOWFLAKE_SCHEMA"],
 )
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+query = "SELECT * FROM CSV_FASTSHIP_ORDERS"
+df = pd.read_sql(query, conn)
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+conn.close()
+st.subheader("Display the first rows")
+st.write(df.head())
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+st.sidebar.subheader("Dynamic Filter")
+max_filter = max(1, len(df.columns))
+num_filters = st.sidebar.number_input(
+    "Number of filters to add", min_value=0, max_value=max_filter, value=0, step=1
+)
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+selected_filters = []
+selected_values = []
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+if num_filters > 0:
+    for i in range(num_filters):
+        col1, col2 = st.columns(2)
+        with col1:
+            filter_column = st.selectbox(
+                "Select the column to filter by",
+                df.columns.to_list(),
+                key=f"f{i}_column",
+            )
+            unique_values = df[filter_column].dropna().unique()
+        with col2:
+            filter_value = st.selectbox(
+                "Select the value to filter by",
+                unique_values,
+                key=f"f{i}_value",
+            )
+        selected_filters.append(filter_column)
+        selected_values.append(filter_value)
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
+    df_filtered = df.copy()
+    for col, val in zip(selected_filters, selected_values):
+        df_filtered = df_filtered[df_filtered[col] == val]
+
+    st.subheader("Filtered Data:")
+    st.write(df_filtered)
+
+    st.download_button(
+        label="Download filtered data as CSV file",
+        data=df_filtered.to_csv(index=False),
+        file_name="filtered_data.csv",
+        mime="text/csv",
     )
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+    tab1, tab2, tab3 = st.tabs(["Dati", "Visualization", "Esportazione & Statistiche"])
 
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
+    with tab1:
+        st.subheader("Correlation Chart Between 2 Categories")
+        if len(selected_filters) >= 2:
+            pivot = pd.crosstab(
+                df_filtered[selected_filters[0]], df_filtered[selected_filters[1]]
+            )
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.heatmap(pivot, annot=True, fmt="d", cmap="Blues", cbar=True, ax=ax)
+            ax.set_xlabel(selected_filters[0])
+            ax.set_ylabel(selected_filters[1])
+            ax.set_title(
+                f"Correlation between {selected_filters[0]} and {selected_filters[1]}"
+            )
+            st.pyplot(fig)
         else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+            st.warning("Please apply at least 2 filters to show the correlation chart.")
 
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+    with tab2:
+        st.subheader("Bar Chart of Numerical Column")
+        numerical_cols = df_filtered.select_dtypes(include=["number"]).columns.tolist()
+        if numerical_cols:
+            selected_num_col = st.selectbox(
+                "Select numerical column to plot", numerical_cols
+            )
+            selected_cat_col = st.selectbox(
+                "Group by column", df_filtered.columns, index=0
+            )
+            bar_data = (
+                df_filtered.groupby(selected_cat_col)[selected_num_col]
+                .sum()
+                .reset_index()
+            )
+            fig2, ax2 = plt.subplots(figsize=(10, 6))
+            sns.barplot(data=bar_data, x=selected_cat_col, y=selected_num_col, ax=ax2)
+            ax2.set_title(f"{selected_num_col} by {selected_cat_col}")
+            st.pyplot(fig2)
+        else:
+            st.info("No numerical columns available for bar chart.")
+
+    with tab3:
+        st.subheader("Statistical Summary")
+        st.write(df_filtered.describe())
+else:
+    st.info("Add at least one filter to access full dashboard features.")

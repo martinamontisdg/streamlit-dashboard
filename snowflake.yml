@@ -1,0 +1,18 @@
+project_definition_version: 1
+name: my_streamlit_dashboard
+type: streamlit
+
+artifacts:
+  - streamlit_app.py
+  - requirements.txt
+
+environment:
+  default_environment: dev
+
+environments:
+  dev:
+    connection: my_conn
+    database: TRAINING_DBT
+    schema: FATSHIP
+    warehouse: TRAINING
+    role: TRAINING
