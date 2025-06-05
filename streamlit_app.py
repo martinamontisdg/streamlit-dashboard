@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import snowflake.connector
 
 st.set_page_config(layout="wide")
+
 st.title("Test Dashboard to Learn")
 
 # Connessione a Snowflake
@@ -32,8 +33,10 @@ st.subheader("Display the first rows")
 st.write(df.head())
 
 st.sidebar.subheader("Dynamic Filter")
+
+st.write("Select the number of filters to apply to the data.")
 max_filter = max(1, len(df.columns))
-num_filters = st.sidebar.number_input(
+num_filters = st.number_input(
     "Number of filters to add", min_value=0, max_value=max_filter, value=0, step=1
 )
 
@@ -41,7 +44,7 @@ selected_filters = []
 
 if num_filters > 0:
     for i in range(num_filters):
-        col1, col2, col3 = st.sidebar.columns([3, 2, 3])
+        col1, col2, col3 = st.columns([3, 2, 3])
         with col1:
             filter_column = st.selectbox(
                 f"Filter {i+1}: Select column",
