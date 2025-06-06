@@ -83,7 +83,15 @@ def update_table(original_df, modified_df, key_columns):
                 SET RETURNED_FL = {row_dict['RETURNED_FL']}, QTY = {row_dict['QTY']}
                 WHERE ORDER_ID = '{row_dict['ORDER_ID']}'
             """
-            session.sql(update_query).collect()
+            conn = snowflake_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute(update_query)
+            except Exception as e:
+                st.error(f"Errore durante l'aggiornamento: {e}")
+            finally:
+                cursor.close()
+            conn.close()
         st.success(f"🟢 {len(changed_rows)} righe aggiornate con successo.")
         st.dataframe(
             pd.DataFrame(changed_rows).style.applymap(
